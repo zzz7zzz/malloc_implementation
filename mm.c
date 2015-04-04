@@ -16,7 +16,6 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
-
 #include "mm.h"
 #include "memlib.h"
 
@@ -68,11 +67,12 @@ team_t team = {
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - 4*WSIZE)))
 
 /*pointers to the next and previous free blocks*/
-#define succ(bp) GET((HDRP((char *)(bp)) + WSIZE)) 
-#define pred(bp) GET((HDRP((char *)(bp)) + DSIZE)) 
+#define succ(bp) (HDRP((char *)(bp)) + WSIZE) 
+#define pred(bp) (HDRP((char *)(bp)) + DSIZE) 
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT) -1) & ~(ALIGNMENT- 1))
+
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
@@ -94,12 +94,9 @@ static void remove_free(void *bp);
 static int mm_check(void);
 static int inbounds(void *ptr);
 
-void add_free(void *bp){
 
-}
-void remove_free(void *bp){
 
-}
+
 
 /* 
  * mm_init - initialize the malloc package.
@@ -118,7 +115,7 @@ int mm_init(void) {
 
     /*Extend the empty heap with a free block of CHUNKSIZE bytes*/
     if(extend_heap(CHUNKSIZE/WSIZE)==NULL)
-        return -1
+        return -1;
 
     freelist_start = NULL;
     freelist_end = NULL;
@@ -135,8 +132,8 @@ void *mm_malloc(size_t size) {
     if(size <= 0){
         return NULL;
     }
-    size = ALIGN(size);
-    int newsize = ALIGN(size + SIZE_T_SIZE);
+    int newsize = ALIGN(size + DSIZE); //DSIZE = overhead of header and footer
+
 
     //if we can fit it anywhere in the free list
         //find the first block
@@ -150,12 +147,12 @@ void *mm_malloc(size_t size) {
         //create header and footer and add this block to the free list, add previous and next
 
 
-    if (p == (void *)-1) {
-	    return NULL;
-    } else {
-        *(size_t *)p = size;
-        return (void *)((char *)p + SIZE_T_SIZE);
-    }
+    // if (p == (void *)-1) {
+	   //  return NULL;
+    // } else {
+    //     *(size_t *)p = size;
+    //     return (void *)((char *)p + SIZE_T_SIZE);
+    // }
 }
 
 
@@ -199,6 +196,92 @@ void *mm_realloc(void *ptr, size_t size) {
 /*Internal helper routines*/
 
 /*
+ * add_free adds the block to the front of the add list
+ */
+void add_free(void *bp){
+    if(!bp){
+        return;
+    }
+
+    /*If the free list is empty*/
+    if(freelist_start == NULL){
+        freelist_start = bp;                            //set the start of the list to bp
+        PUT((char *)HDRP(bp), PACK(GET_SIZE(bp), 0));   //change the header of bp to indicate it is free
+        PUT((char *)FTRP(bp), PACK(GET_SIZE(bp), 0));   //change the footer of bp to indicate it is free
+        PUT((char *)succ(bp), NULL);                    //set the succesor function to point to NULL since it is end of list
+        PUT((char *)pred(bp), NULL);                    //set the predecessor function to point to NULL since it is start of list
+    }
+
+    /*otherwise the freelist is not empty*/
+    else{
+        char *temp = freelist_start;                    //keep track of old start of the free list
+        PUT((char *)HDRP(bp), PACK(GET_SIZE(bp), 0));   //change the header of bp to indicate it is free
+        PUT((char *)FTRP(bp), PACK(GET_SIZE(bp), 0));   //change the footer of bp to indicate it is free
+        PUT((char *)succ(bp), temp);                    //set the successor function to point to the old start of the list
+        PUT((char *)pred(bp), NULL);                    //set the predecessor function to point to NULL since it is start of list
+        freelist_start = bp;                            //set the start of the list to bp
+    }
+
+}
+
+/*
+ * remove_free removes a block from the free list
+ */
+void remove_free(void *bp){
+
+    if(bp == freelist_start){
+
+        char *temp1 = succ(bp);
+
+        PUT((char *)pred(temp1), NULL);
+        
+        freelist_start = temp1;
+        
+        PUT((char *)HDRP(bp), PACK(GET_SIZE(bp), 1));
+        PUT((char *)FTRP(bp), PACK(GET_SIZE(bp), 1));
+        
+        PUT((char *)succ(bp), NULL);
+        PUT((char *)pred(bp), NULL);
+
+    }
+    if(bp == freelist_end){
+        char *temp2 = pred(bp);
+
+        PUT((char *)succ(temp2), NULL);
+
+        freelist_end = temp2;
+
+        PUT((char *)HDRP(bp), PACK(GET_SIZE(bp), 1));
+        PUT((char *)FTRP(bp), PACK(GET_SIZE(bp), 1));
+        
+        PUT((char *)succ(bp), NULL);
+        PUT((char *)pred(bp), NULL);
+
+    }
+    else{
+    
+    //change the pointers that are pointing to it
+    char *temp1 = succ(bp);
+    char *temp2 = pred(bp);
+
+    PUT((char *)succ(temp2), temp1);
+    PUT((char *)pred(temp1), temp2);
+
+    //clear its pointers
+    PUT((char *)succ(bp), NULL); //NULL OR 0?
+    PUT((char *)pred(bp), NULL);
+    
+
+    //set the allocated bits to 1
+    PUT((char *)HDRP(bp), PACK(GET_SIZE(bp), 1));
+    PUT((char *)FTRP(bp), PACK(GET_SIZE(bp), 1));
+
+    
+    }
+    return;
+}
+
+/*
  * heap checker checks:
  *      is every block in the free list marked as free
  *      are there any contiguous free blocks that somehow escaped coalescing
@@ -208,7 +291,7 @@ void *mm_realloc(void *ptr, size_t size) {
  *      do the pointers in a heap block point to valid heap addresses
  */
 static int mm_check(void){
-
+    return 0;
 }
 
 /*
@@ -275,8 +358,29 @@ static void *extend_heap(size_t words){
  }
 
 /*
- * find_fit finds the best fitting block from the free list
+ * find_fit finds the first fitting block from the free list
  */
  void *find_fit(size_t asize){
+
+    char *current = freelist_start;         // get the start of the free list
+    while(current!=NULL){
+        if(GET_SIZE(current) >= asize){
+            return current;                 //return that block if it is a fit
+        }
+        current = (char *) GET((char *)succ(current));       // else go to the next block in the free list
+    }
+
+    return NULL;
+ }
+
+ void place(void *bp, size_t size){
+    return;
+ }
+
+ void printblock(void *bp){
+    return;
+ }
+
+ void checkblock(void *bp){
     return;
  }
