@@ -1,7 +1,6 @@
-
-//http://csapp.cs.cmu.edu/public/ics2/code/vm/malloc/mm.c
+/* Sunday Apr 5 Kate*/
 /*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
+ * mm.c 
  * 
  * In this naive approach, a block is allocated by simply incrementing
  * the brk pointer.  A block is pure payload. There are no headers or
@@ -37,12 +36,12 @@ team_t team = {
 };
 
 /* 16 byte alignment */
-#define ALIGNMENT 16      /*alignment in bytes*/
+#define ALIGNMENT 16      /*Alignment in bytes*/
 #define WSIZE 4           /*Word size in bytes*/
 #define DSIZE 8           /*Double word size in bytes*/
-#define CHUNKSIZE (1<<12) /*Initial heap size*/
+#define CHUNKSIZE (1<<12) /*Initial heap size. Divisible by 16 byte alignment*/
 
-//MINBLOCKSIZE is 16;
+/* MINBLOCKSIZE is 16 */
 #define MIN_BLOCK_SIZE 16
 
 #define MAX(x,y) ((x) >(y)? (x) : (y))
@@ -55,32 +54,31 @@ team_t team = {
 #define PUT(p, val) (*(unsigned int *)(p) = (val))
 
 /*Read the size and allocated bit from the address p*/
-#define GET_SIZE(p) (GET(p) & ~0x7)
+#define GET_SIZE(p) (GET(p) & ~0xF)
+#define GET_PREV_ALLOC(p) (GET(p) & 0x2) // not used for now
 #define GET_ALLOC(p) (GET(p) & 0x1)
 
-/*Compute the address of the header and footer given block pointer bp*/
-#define HDRP(bp) ((char *)(bp) -3*WSIZE)
-#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - 2*DSIZE)
+/*Compute the address of the header and footer given block pointer bp which points to payload in allocated list so no pred and succ*/
+#define HDRP(bp) ((char *)(bp) - WSIZE)
+#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
 
-/*Compute the address of the next block or previous block in the heap*/
+/*Compute the address of the next block or previous block in the heap in free list*/ 
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - 3*WSIZE)))
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - 4*WSIZE)))
 
-/*pointers to the next and previous free blocks*/
-#define succ(bp) (HDRP((char *)(bp)) + WSIZE) 
-#define pred(bp) (HDRP((char *)(bp)) + DSIZE) 
+/*pointers to the next and previous free blocks. p points to the start of the block, not the payload. */
+#define succ(hp) ((char *)(hp) + WSIZE) 
+#define pred(hp) ((char *)(hp) + DSIZE) 
 
-/* rounds up to the nearest multiple of ALIGNMENT */
+/*rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT) -1) & ~(ALIGNMENT- 1))
-
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 /*global variables*/
 static char *heap_listp; /*pointer to the first block*/
-static char *freelist_start;
+static char *freelist_start; /* points to the start of the block*/
 static char *freelist_end;
-int verbose = 1;
 
 /*Function prototypes for healper routines*/
 static void *extend_heap(size_t words);
@@ -93,9 +91,6 @@ static void add_free(void *bp);
 static void remove_free(void *bp);
 static int mm_check(void);
 static int inbounds(void *ptr);
-
-
-
 
 
 /* 
@@ -124,49 +119,67 @@ int mm_init(void) {
 
 
 /* 
- * mm_malloc - Allocate a block by incrementing the brk pointer.
+ * mm_malloc - Allocate a block.
  *     Always allocate a block whose size is a multiple of the alignment.
+ *     size refers to payload. 
+ *     returns a pointer to the payload
  */
 void *mm_malloc(size_t size) {
+    size_t newsize; /* adjusted block size that includes header and footer*/
+    size_t increasesize;
+    char *bp;
     
     if(size <= 0){
         return NULL;
     }
-    int newsize = ALIGN(size + DSIZE); //DSIZE = overhead of header and footer
+    
+    newsize = ALIGN(size + 8); /* include header and footer */
+    
+    
+    /* Search a fit in the free list and place it in the block*/
+    /* bp points to payload */
+    if ((bp = find_fit(newsize)) != NULL) {                     //if we can fit it anywhere in the free list
 
+      place(bp, newsize); //will call free list stuff           //call place function to add it
+      return bp;                                                //return the block pointer to the newly allocated block
+    }
+    
+    /* No fit found. Extend the heap size */
+    increasesize = MAX(newsize, CHUNKSIZE);                     //and if the needed space is larger than our normal chunksize
+    if ((bp = extend_heap(increasesize/WSIZE)) == NULL)         //extend the heap by the needed space
+      return NULL;                                              //error catching
 
-    //if we can fit it anywhere in the free list
-        //find the first block
-        //remove from free list
-        //mark as allocated
-        //set footer to point to the header
-            //if the block is larger than the needed space
-                //the new split portion of the block needs a header and footer
-                //add this new block to the free list
-    //otherwise request more memory and return the block pointer
-        //create header and footer and add this block to the free list, add previous and next
+    /*allocate the needed space from the new chunk*/
+    place(bp, newsize);
 
-
-    // if (p == (void *)-1) {
-	   //  return NULL;
-    // } else {
-    //     *(size_t *)p = size;
-    //     return (void *)((char *)p + SIZE_T_SIZE);
-    // }
+    return bp;
+    
 }
 
 
 
 /*
- * mm_free - Freeing a block does nothing.
+ * mm_free - set the block as free and coalesce
  */
 void mm_free(void *ptr) 
 {
-    //if pointer is invalid return
+    
+//if pointer is invalid return
     //else get the header of the pointer
     //mark the header as free
     //coalesce with adjacent blocks
+  // se prev and next pointers to point to 
     //add block to the free list
+  size_t size = GET_SIZE(HDRP(ptr));
+  
+  if (ptr == NULL)
+    return NULL;
+  
+  PUT((char *)HDRP(ptr), PACK(size, 0)); 
+  PUT((char *)FTRP(ptr), PACK(size, 0)); 
+  
+  coalesce(ptr);
+  
 }
 
 /*
@@ -358,26 +371,83 @@ static void *extend_heap(size_t words){
  }
 
 /*
- * find_fit finds the first fitting block from the free list
+ * find_fit finds the first fit block and returns a pointer to the start of the payload
+ * size is the no. of bytes needed for header, footer and payload in allocated list.
+ * size should be aligned. 
  */
- void *find_fit(size_t asize){
-
-    char *current = freelist_start;         // get the start of the free list
-    while(current!=NULL){
-        if(GET_SIZE(current) >= asize){
-            return current;                 //return that block if it is a fit
-        }
-        current = (char *) GET((char *)succ(current));       // else go to the next block in the free list
-    }
-
-    return NULL;
+ void *find_fit(size_t size){
+   char * current;
+   char * succ_address;
+   
+   // if free list is empty, return NULL
+   if (freelist_start == NULL)
+     return NULL;
+   
+   // check size is aligned;
+   if (size != ALIGN(size)) {
+     printf("size %d is not aligned!", size);
+     size = ALIGN(size);
+   }
+   
+   current = freelist_start;
+   
+   // if free list finds non-null block with right size, return address of block
+   while (current != NULL) {
+      if (GET_SIZE(current) >= size) {
+             return (current + WSIZE); /* return pointer to payload */
+      }
+      current = (char *) GET((char *)succ(current));
+   }
+   
+   // else when free list finds no appropriate block, return NULL  
+   return NULL;
  }
-
- void place(void *bp, size_t size){
+ 
+/*
+ * place puts the aligned size in the payload of the block and splits the rest
+ * bp points to the start of the payload in allocated list
+ * size is the aligned no. of bytes needed for header, footer and payload in allocated list
+ */
+void place(void *bp, size_t size) {
+  char* splitAddress; /* address of the start of the split block */
+  size_t sizeDiff;
+  
+  if (size <= 0)
     return;
- }
+  
+  if (bp == NULL || !inbounds(bp))
+    return;
+    /*
+   // check size is aligned;
+   if (size != ALIGN(size)) {
+     printf("size %d is not aligned!", size);
+     size = ALIGN(size);
+   }
+  
+  if (GET_SIZE(HDRP(bp)) < size) {
+     printf("in place(), size should have been determined by find_fit()", size);
+     return; //block is no longer large enough to accomodate for the size
+  }*/
+  
+  //set header and footer
+  remove_free(bp);
+  PUT(HDRP(bp), PACK(size,1));  
+  PUT(FTRP(bp), PACK(size,1)); 
+  // clear payload or not???
 
- void printblock(void *bp){
+  // if free block has remaining space, split the block, set header, footer of the split block and add to free list
+  if (GET_SIZE(HDRP(bp)) >= size) {
+    sizeDiff = GET_SIZE(HDRP(bp)) - size;
+    splitAddress = bp + size; /* splitAddress points to 1 word after the header */
+    PUT(HDRP(splitAddress), PACK(sizeDiff,0));  
+    PUT(FTRP(splitAddress), PACK(sizeDiff,0)); 
+    add_free(splitAddress); // add to the front of the list or just set the succ and pred to the same one as the original free block???
+  }
+  
+  return;
+}
+
+void printblock(void *bp){
     return;
  }
 
