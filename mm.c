@@ -109,9 +109,10 @@ int mm_init(void) {
     heap_listp += (2*WSIZE);
 
     /*Extend the empty heap with a free block of CHUNKSIZE bytes*/
-    if(extend_heap(CHUNKSIZE/WSIZE)==NULL)
+    if((extend_heap(CHUNKSIZE/WSIZE))==NULL)
         return -1;
 
+   // freelist_start = heap_listp;
     freelist_start = NULL;
     freelist_end = NULL;
     return 0;
@@ -129,6 +130,17 @@ void *mm_malloc(size_t size) {
     size_t increasesize;
     char *bp;
     
+    if (freelist_start == NULL){
+      printf("freelist_start is null\n");
+      mm_init();
+      freelist_start = heap_listp + 2*WSIZE;
+    PUT(HDRP(freelist_start),PACK(CHUNKSIZE,0));
+    PUT(FTRP(freelist_start),PACK(CHUNKSIZE,0));
+    printf("freelist start  address is %x\n", freelist_start);
+    printf("freelist start header address is %x\n", HDRP(freelist_start));
+    printf("freelist start footer address is %x\n", FTRP(freelist_start));
+    }
+    
     if(size <= 0){
         return NULL;
     }
@@ -139,7 +151,7 @@ void *mm_malloc(size_t size) {
     /* Search a fit in the free list and place it in the block*/
     /* bp points to payload */
     if ((bp = find_fit(newsize)) != NULL) {                     //if we can fit it anywhere in the free list
-
+  printf("find fit if not null\n");
       place(bp, newsize); //will call free list stuff           //call place function to add it
       return bp;                                                //return the block pointer to the newly allocated block
     }
@@ -219,8 +231,8 @@ void add_free(void *bp){
     /*If the free list is empty*/
     if(freelist_start == NULL){
         freelist_start = bp;                            //set the start of the list to bp
-        PUT((char *)HDRP(bp), PACK(GET_SIZE(bp), 0));   //change the header of bp to indicate it is free
-        PUT((char *)FTRP(bp), PACK(GET_SIZE(bp), 0));   //change the footer of bp to indicate it is free
+        PUT((char *)HDRP(bp), PACK(CHUNKSIZE, 0));   //change the header of bp to indicate it is free
+        PUT((char *)FTRP(bp), PACK(CHUNKSIZE, 0));   //change the footer of bp to indicate it is free
         PUT((char *)succ(bp), NULL);                    //set the succesor function to point to NULL since it is end of list
         PUT((char *)pred(bp), NULL);                    //set the predecessor function to point to NULL since it is start of list
     }
@@ -376,16 +388,17 @@ static void *extend_heap(size_t words){
  * size should be aligned. 
  */
  void *find_fit(size_t size){
-   char * current;
+  char * current;
    char * succ_address;
    
    // if free list is empty, return NULL
-   if (freelist_start == NULL)
+   if (freelist_start == NULL) {
+    printf("free list start null\n");
      return NULL;
-   
+   }
    // check size is aligned;
    if (size != ALIGN(size)) {
-     printf("size %d is not aligned!", size);
+     printf("size %d is not aligned!\n", size);
      size = ALIGN(size);
    }
    
@@ -394,13 +407,23 @@ static void *extend_heap(size_t words){
    // if free list finds non-null block with right size, return address of block
    while (current != NULL) {
       if (GET_SIZE(current) >= size) {
-             return (current + WSIZE); /* return pointer to payload */
+             return (current + WSIZE); //return pointer to payload 
       }
       current = (char *) GET((char *)succ(current));
    }
-   
+   printf("find fit return NULL\n");
    // else when free list finds no appropriate block, return NULL  
    return NULL;
+  
+   /*void *bp;
+
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+	if (!GET_ALLOC(HDRP(bp)) && (size <= GET_SIZE(HDRP(bp)))) {
+	    return bp;
+	}
+    }
+    printf("return NULL\n");
+    return NULL;*/
  }
  
 /*
@@ -417,7 +440,7 @@ void place(void *bp, size_t size) {
   
   if (bp == NULL || !inbounds(bp))
     return;
-    /*
+    
    // check size is aligned;
    if (size != ALIGN(size)) {
      printf("size %d is not aligned!", size);
@@ -425,9 +448,9 @@ void place(void *bp, size_t size) {
    }
   
   if (GET_SIZE(HDRP(bp)) < size) {
-     printf("in place(), size should have been determined by find_fit()", size);
+     printf("in place(), size should have been determined by find_fit()\n", size);
      return; //block is no longer large enough to accomodate for the size
-  }*/
+  }
   
   //set header and footer
   remove_free(bp);
