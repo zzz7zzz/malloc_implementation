@@ -364,7 +364,7 @@ void place(void *bp, size_t size) {
     splitAddress = bp + size; /* splitAddress points to 1 word after the header */
     PUT(HDRP(splitAddress), PACK(sizeDiff,0));  
     PUT(FTRP(splitAddress), PACK(sizeDiff,0)); 
-    add_free(splitAddress);
+    add_free(splitAddress); // add to the front of the list or just set the succ and pred to the same one as the original free block???
   }
   
   return;
